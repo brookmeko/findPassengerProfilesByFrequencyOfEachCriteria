@@ -1,0 +1,88 @@
+
+    @Query(value = "select  p.risk_level, rs.criteria ,COUNT(CASE WHEN rs.score > 0 THEN rs.score END) AS score_count " +
+            " from custom_profile_local.passenger_profiles p, " +
+            "     custom_profile_local.transportations t, custom_profile_local.customs_operations c, " +
+            "     custom_profile_local.risk_analysis_result rs " +
+            " where  c.id = p.customs_operation_id and p.id = rs.passenger_profile_id  and c.id = t.customs_operation_id  and " +
+            "       t.created_date>=:startDate and t.created_date<=:endDate " +
+            "group by  p.risk_level,  rs.criteria ", nativeQuery = true)
+    List<Object[]> getPassengerProfilesByFrequencyOfEachCriteria(
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate
+    );
+    default List<ReportPassengerRiskDTO> findPassengerProfilesByFrequencyOfEachCriteria(
+            Date startDate,
+            Date endDate
+
+    ) {
+        List<Object[]> resultList = null;
+        resultList = getPassengerProfilesByFrequencyOfEachCriteria(startDate.toString(), endDate.toString());
+        List<ReportPassengerRiskDTO> dtos = new ArrayList<>();
+        int totalRed = 0;
+        int totalGreen = 0;
+        float totalRedPercentage=0.0f;
+        float totalGreenPercentage=0.0f;
+        float redPercentage=0.0f;
+        float greenPercentage=0.0f;
+        for (Object[] row : resultList) {
+            ReportPassengerRiskDTO reportResult = new ReportPassengerRiskDTO();
+
+            boolean criteriaFound = false;
+
+            // Check if the criteria already exists in dtos
+            for (ReportPassengerRiskDTO existingDTO : dtos) {
+                if (existingDTO.getCriteria().equals((String) row[1])) {
+                    criteriaFound = true;
+                    if ("RED".equals(row[0])) {
+                        existingDTO.setRedFrequency(((Number) row[2]).intValue());
+                    } else if ("GREEN".equals(row[0])) {
+                        existingDTO.setGreenFrequency( ((Number) row[2]).intValue());
+                    }
+                    // Update any other fields if needed
+                    break;
+                }
+            }
+            // If criteria is not found, set the frequencies and add to the list
+            if (!criteriaFound) {
+                reportResult.setCriteria((String) row[1]);
+                if ("RED".equals(row[0])) {
+                    reportResult.setRedFrequency(((Number) row[2]).intValue());
+                } else if ("GREEN".equals(row[0])) {
+                    reportResult.setGreenFrequency(((Number) row[2]).intValue());
+                }
+                // Set any other fields if needed
+                dtos.add(reportResult);
+            }
+            totalRed += reportResult.getRedFrequency();
+            totalGreen += reportResult.getGreenFrequency();
+        }
+        // update percentage
+        for (ReportPassengerRiskDTO existingDTO : dtos) {
+             redPercentage=0.0f;
+             greenPercentage=0.0f;
+            if (totalRed > 0) {
+                redPercentage = (float) ((existingDTO.getRedFrequency() * 100.0) / totalRed);
+                existingDTO.setRedPercentage(redPercentage);
+                totalRedPercentage += redPercentage;
+            } else {
+                existingDTO.setRedPercentage(0.0f); // Set to 0 if totalRed is zero
+            }
+            if (totalGreen > 0) {
+                greenPercentage = (float) ((existingDTO.getGreenFrequency() * 100.0) / totalGreen);
+                existingDTO.setGreenPercentage(greenPercentage);
+                totalGreenPercentage += greenPercentage;
+            } else {
+                existingDTO.setGreenPercentage(0.0f); // Set to 0 if totalGreen is zero
+            }
+        }
+        ReportPassengerRiskDTO reportResult = new ReportPassengerRiskDTO();
+        reportResult.setCriteria("Total");
+        reportResult.setRedFrequency(totalRed);
+        reportResult.setGreenFrequency(totalGreen);
+        reportResult.setRedPercentage(totalRedPercentage);
+        reportResult.setGreenPercentage(totalGreenPercentage);
+        reportResult.setRptEndDate(endDate);
+        reportResult.setRptStartDate(startDate);
+        dtos.add(reportResult);
+        return dtos;
+    }
